@@ -3,6 +3,7 @@ use anchor_spl::token_interface::{
     transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
 };
 
+use super::error::AuctionError;
 use crate::{Auction, Bids};
 
 #[derive(Accounts)]
@@ -79,10 +80,4 @@ impl<'info> Bid<'info> {
         let cpi_ctx = CpiContext::new(self.token_program.to_account_info(), transfer_accounts);
         transfer_checked(cpi_ctx, additional_amount, self.bid_mint.decimals)
     }
-}
-
-#[error_code]
-pub enum AuctionError {
-    #[msg("The auction has already ended.")]
-    AuctionEnded,
 }
