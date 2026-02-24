@@ -8,4 +8,6 @@ pub enum AuctionError {
     AuctionNotEnded,
     #[msg("The auction has already been resolved.")]
     AlreadyResolved,
+    #[msg("The winner cannot claim a refund.")]
+    CannotRefundWinner,
 }
