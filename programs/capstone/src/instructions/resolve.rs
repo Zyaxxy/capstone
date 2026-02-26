@@ -1,11 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token_interface::{
-    transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked,
+    close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
+    TransferChecked,
 };
 
 use super::error::AuctionError;
-use crate::Auction;
+use crate::{Auction, Bids};
 
 #[derive(Accounts)]
 pub struct ResolveAuction<'info> {
@@ -20,8 +21,16 @@ pub struct ResolveAuction<'info> {
     pub winner: AccountInfo<'info>,
 
     /// CHECK: We only need this to validate the maker_bid_ata ownership
-    #[account(address = auction.maker)]
+    #[account(mut, address = auction.maker)]
     pub maker: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        close = maker, // Close winner's bid record, rent → maker
+        seeds = [b"bids", auction.key().as_ref(), winner.key().as_ref()],
+        bump = winner_bid_record.bump,
+    )]
+    pub winner_bid_record: Account<'info, Bids>,
 
     #[account(
         init_if_needed,
@@ -29,7 +38,7 @@ pub struct ResolveAuction<'info> {
         associated_token::mint = bid_mint,
         associated_token::authority = maker,
     )]
-    pub maker_bid_ata: InterfaceAccount<'info, TokenAccount>,
+    pub maker_bid_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         init_if_needed,
@@ -37,21 +46,21 @@ pub struct ResolveAuction<'info> {
         associated_token::mint = nft_mint,
         associated_token::authority = winner,
     )]
-    pub winner_nft_ata: InterfaceAccount<'info, TokenAccount>,
+    pub winner_nft_ata: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         mut,
         associated_token::mint = nft_mint,
         associated_token::authority = auction,
     )]
-    pub vault_nft: InterfaceAccount<'info, TokenAccount>,
+    pub vault_nft: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         mut,
         associated_token::mint = bid_mint,
         associated_token::authority = auction,
     )]
-    pub vault_bid: InterfaceAccount<'info, TokenAccount>,
+    pub vault_bid: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(address = auction.nft_mint)]
     pub nft_mint: InterfaceAccount<'info, Mint>,
@@ -68,19 +77,19 @@ impl<'info> ResolveAuction<'info> {
     pub fn resolve(&mut self) -> Result<()> {
         let clock = Clock::get()?;
 
-        // 1. Ensure the auction is actually over
+        // Ensuring the auction is actually over
         require!(
             clock.unix_timestamp >= self.auction.end_time,
             AuctionError::AuctionNotEnded
         );
 
-        // 2. Ensure it hasn't already been resolved to prevent double-spending
+        // Ensuring it hasn't already been resolved to prevent double-spending
         require!(!self.auction.resolved, AuctionError::AlreadyResolved);
 
-        // 3. Mark as resolved immediately (Checks-Effects-Interactions pattern)
+        // Mark as resolved immediately (Checks-Effects-Interactions pattern)
         self.auction.resolved = true;
 
-        // 4. Prepare the PDA signatures to authorize the vault transfers
+        // Preparing the PDA signatures to authorize the vault transfers
         let seed_bytes = self.auction.seed.to_le_bytes();
         let signer_seeds: &[&[&[u8]]] = &[&[
             b"auction",
@@ -89,7 +98,7 @@ impl<'info> ResolveAuction<'info> {
             &[self.auction.bump],
         ]];
 
-        // 5. Transfer the Prize (NFT) to the Winner
+        // Transfer the Prize (NFT) to the Winner
         let transfer_nft_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
             TransferChecked {
@@ -102,7 +111,18 @@ impl<'info> ResolveAuction<'info> {
         );
         transfer_checked(transfer_nft_ctx, 1, self.nft_mint.decimals)?;
 
-        // 6. Transfer the Winning Bid (USDC/Tokens) to the Maker
+        // Close the now-empty vault_nft ATA — rent goes back to maker
+        close_account(CpiContext::new_with_signer(
+            self.token_program.to_account_info(),
+            CloseAccount {
+                account: self.vault_nft.to_account_info(),
+                destination: self.maker.to_account_info(),
+                authority: self.auction.to_account_info(),
+            },
+            signer_seeds,
+        ))?;
+
+        // Transfering the Winning Bid (USDC/Tokens) to the Maker
         let transfer_bid_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
             TransferChecked {

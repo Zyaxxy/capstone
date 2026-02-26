@@ -11,11 +11,25 @@ declare_id!("C27TZ2WfzrWun9AgXky6Roqxpnasxrc69KwpHXAa3pm");
 pub mod capstone {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        msg!("Greetings from: {:?}", ctx.program_id);
-        Ok(())
+    pub fn make_auction(
+        ctx: Context<MakeAuction>,
+        seed: u64,
+        end_time: i64,
+        deposit_amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.init_auction(seed, end_time, &ctx.bumps)?;
+        ctx.accounts.deposit_prize(deposit_amount)
+    }
+
+    pub fn bid(ctx: Context<Bid>, additional_amount: u64) -> Result<()> {
+        ctx.accounts.bid(additional_amount, &ctx.bumps)
+    }
+
+    pub fn claim_refund(ctx: Context<ClaimRefund>) -> Result<()> {
+        ctx.accounts.refund_loser()
+    }
+
+    pub fn resolve_auction(ctx: Context<ResolveAuction>) -> Result<()> {
+        ctx.accounts.resolve()
     }
 }
-
-#[derive(Accounts)]
-pub struct Initialize {}

@@ -10,4 +10,6 @@ pub enum AuctionError {
     AlreadyResolved,
     #[msg("The winner cannot claim a refund.")]
     CannotRefundWinner,
+    #[msg("The auction has not been resolved yet.")]
+    AuctionNotResolved,
 }

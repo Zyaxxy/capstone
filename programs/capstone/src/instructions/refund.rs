@@ -1,7 +1,10 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
+    token_interface::{
+        close_account, transfer_checked, CloseAccount, Mint, TokenAccount, TokenInterface,
+        TransferChecked,
+    },
 };
 
 use super::error::AuctionError;
@@ -11,6 +14,10 @@ use crate::{Auction, Bids};
 pub struct ClaimRefund<'info> {
     #[account(mut)]
     pub bidder: Signer<'info>, // The losing bidder signs and pays the network fee
+
+    /// CHECK: We only need this to send vault_bid ATA rent back to the maker
+    #[account(mut, address = auction.maker)]
+    pub maker: AccountInfo<'info>,
 
     #[account(mut)]
     pub auction: Account<'info, Auction>,
@@ -51,19 +58,22 @@ impl<'info> ClaimRefund<'info> {
     pub fn refund_loser(&mut self) -> Result<()> {
         let clock = Clock::get()?;
 
-        // 1. Ensuring the auction is over
+        // Ensuring the auction is over
         require!(
             clock.unix_timestamp >= self.auction.end_time,
             AuctionError::AuctionNotEnded
         );
 
-        // 2. Ensuring the winner cannot withdraw their locked bid
+        // Ensuring the auction has been resolved
+        require!(self.auction.resolved, AuctionError::AuctionNotResolved);
+
+        // Ensuring the winner cannot withdraw their locked bid
         require!(
             self.bid_record.bidder != self.auction.highest_bidder,
             AuctionError::CannotRefundWinner
         );
 
-        // 3. Preparing the PDA signatures to authorize the vault transfer
+        // Preparing the PDA signatures to authorize the vault transfer
         let seed_bytes = self.auction.seed.to_le_bytes();
         let signer_seeds: &[&[&[u8]]] = &[&[
             b"auction",
@@ -72,7 +82,7 @@ impl<'info> ClaimRefund<'info> {
             &[self.auction.bump],
         ]];
 
-        // 4. Transfering the losing amount back to the bidder
+        // Transfering the losing amount back to the bidder
         let transfer_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
             TransferChecked {
@@ -83,7 +93,22 @@ impl<'info> ClaimRefund<'info> {
             },
             signer_seeds,
         );
+        transfer_checked(transfer_ctx, self.bid_record.amount, self.bid_mint.decimals)?;
 
-        transfer_checked(transfer_ctx, self.bid_record.amount, self.bid_mint.decimals)
+        // If the vault is now empty, close the vault_bid ATA — rent goes to maker
+        self.vault_bid.reload()?;
+        if self.vault_bid.amount == 0 {
+            close_account(CpiContext::new_with_signer(
+                self.token_program.to_account_info(),
+                CloseAccount {
+                    account: self.vault_bid.to_account_info(),
+                    destination: self.maker.to_account_info(),
+                    authority: self.auction.to_account_info(),
+                },
+                signer_seeds,
+            ))?;
+        }
+
+        Ok(())
     }
 }

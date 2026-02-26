@@ -42,34 +42,34 @@ pub struct Bid<'info> {
 
 impl<'info> Bid<'info> {
     pub fn bid(&mut self, additional_amount: u64, bumps: &BidBumps) -> Result<()> {
-        // 1. Enforce the time limit
+        // Enforce the time limit
         let clock = Clock::get()?;
         require!(
             clock.unix_timestamp < self.auction.end_time,
             AuctionError::AuctionEnded
         );
 
-        // 2. Initialize baseline data if this is a brand new bid
+        // Initialize baseline data if this is a brand new bid
         if self.bid_record.amount == 0 {
             self.bid_record.bidder = self.bidder.key();
             self.bid_record.bump = bumps.bid_record;
             self.bid_record.refunded = false;
         }
 
-        // 3. Update the user's total deposited amount
+        // Update the user's total deposited amount
         self.bid_record.amount = self
             .bid_record
             .amount
             .checked_add(additional_amount)
             .unwrap();
 
-        // 4. Update the Auction leaderboard if they are the new highest bidder
+        // Updating the Auction leaderboard if they are the new highest bidder
         if self.bid_record.amount > self.auction.highest_bid_amount {
             self.auction.highest_bidder = self.bidder.key();
             self.auction.highest_bid_amount = self.bid_record.amount;
         }
 
-        // 5. Transfer tokens from the Bidder to the shared Vault
+        // Transferring tokens from the Bidder to the shared Vault
         let transfer_accounts = TransferChecked {
             from: self.bidder_bid_ata.to_account_info(),
             to: self.vault_bid.to_account_info(),
