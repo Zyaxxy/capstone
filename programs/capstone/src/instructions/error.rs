@@ -12,4 +12,6 @@ pub enum AuctionError {
     CannotRefundWinner,
     #[msg("The auction has not been resolved yet.")]
     AuctionNotResolved,
+    #[msg("Cannot cancel an auction that received bids.")]
+    AuctionHasBids,
 }

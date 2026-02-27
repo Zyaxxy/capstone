@@ -26,7 +26,7 @@ pub struct ResolveAuction<'info> {
 
     #[account(
         mut,
-        close = maker, // Close winner's bid record, rent → maker
+        close = winner, // Winner paid rent for this PDA when they bid — give it back to them
         seeds = [b"bids", auction.key().as_ref(), winner.key().as_ref()],
         bump = winner_bid_record.bump,
     )]

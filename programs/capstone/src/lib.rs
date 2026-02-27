@@ -32,4 +32,8 @@ pub mod capstone {
     pub fn resolve_auction(ctx: Context<ResolveAuction>) -> Result<()> {
         ctx.accounts.resolve()
     }
+
+    pub fn cancel_auction(ctx: Context<CancelAuction>) -> Result<()> {
+        ctx.accounts.cancel()
+    }
 }

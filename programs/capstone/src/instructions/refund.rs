@@ -64,8 +64,8 @@ impl<'info> ClaimRefund<'info> {
             AuctionError::AuctionNotEnded
         );
 
-        // Ensuring the auction has been resolved
-        require!(self.auction.resolved, AuctionError::AuctionNotResolved);
+        // No resolved-gate here on purpose — losers can withdraw the moment
+        // end_time passes, even if the maker never calls resolve_auction.
 
         // Ensuring the winner cannot withdraw their locked bid
         require!(
@@ -95,9 +95,11 @@ impl<'info> ClaimRefund<'info> {
         );
         transfer_checked(transfer_ctx, self.bid_record.amount, self.bid_mint.decimals)?;
 
-        // If the vault is now empty, close the vault_bid ATA — rent goes to maker
+        // Last one out turns off the lights — if all tokens have been withdrawn,
+        // we close the vault ATA and the Auction PDA so the maker gets their rent back.
         self.vault_bid.reload()?;
         if self.vault_bid.amount == 0 {
+            // Close the now-empty token vault
             close_account(CpiContext::new_with_signer(
                 self.token_program.to_account_info(),
                 CloseAccount {
@@ -107,6 +109,17 @@ impl<'info> ClaimRefund<'info> {
                 },
                 signer_seeds,
             ))?;
+
+            // Manually close the Auction PDA — Anchor can't do this for us
+            // because the last refund caller isn't the maker, so we zero the
+            // account's lamports and data ourselves.
+            let auction_info = self.auction.to_account_info();
+            let maker_info = self.maker.to_account_info();
+
+            let rent = auction_info.lamports();
+            **auction_info.lamports.borrow_mut() = 0;
+            **maker_info.lamports.borrow_mut() = maker_info.lamports().checked_add(rent).unwrap();
+            auction_info.data.borrow_mut().fill(0);
         }
 
         Ok(())
