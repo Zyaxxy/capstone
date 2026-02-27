@@ -17,7 +17,7 @@ pub struct ResolveAuction<'info> {
     pub auction: Account<'info, Auction>,
 
     /// CHECK: We only need this to validate the winner_nft_ata ownership
-    #[account(address = auction.highest_bidder)]
+    #[account(mut, address = auction.highest_bidder)]
     pub winner: AccountInfo<'info>,
 
     /// CHECK: We only need this to validate the maker_bid_ata ownership
