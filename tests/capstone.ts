@@ -12,7 +12,7 @@ import {
 } from "@solana/spl-token";
 
 describe("capstone-auction", () => {
-  const provider = anchor.AnchorProvider.env();
+  const provider = anchor.AnchorProvider.env()!;
   anchor.setProvider(provider);
 
   const program = anchor.workspace.capstone as Program<Capstone>;
@@ -30,8 +30,8 @@ describe("capstone-auction", () => {
   let bidder2BidAta: anchor.web3.PublicKey;
   let winnerNftAta: anchor.web3.PublicKey;
 
-  const seed1 = new anchor.BN(1001);
-  const seed2 = new anchor.BN(1002);
+  const seed1 = new anchor.BN(Math.floor(Math.random() * 1001));
+  const seed2 = new anchor.BN(Math.floor(Math.random() * 1002));
   let auctionPda: anchor.web3.PublicKey;
   let vaultNft: anchor.web3.PublicKey;
   let vaultBid: anchor.web3.PublicKey;
@@ -41,16 +41,25 @@ describe("capstone-auction", () => {
   let endTime: number;
 
   before(async () => {
-    // 1. Airdrop SOL
-    const airdropSigs = await Promise.all([
-      provider.connection.requestAirdrop(bidder1.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL),
-      provider.connection.requestAirdrop(bidder2.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL),
-      provider.connection.requestAirdrop(crank.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL),
-    ]);
-
-    for (const sig of airdropSigs) {
-      await provider.connection.confirmTransaction(sig, "confirmed");
-    }
+    console.log("Funding test accounts from main provider wallet...");
+    const transferTx = new anchor.web3.Transaction().add(
+      anchor.web3.SystemProgram.transfer({
+        fromPubkey: maker.publicKey,
+        toPubkey: bidder1.publicKey,
+        lamports: 0.1 * anchor.web3.LAMPORTS_PER_SOL,
+      }),
+      anchor.web3.SystemProgram.transfer({
+        fromPubkey: maker.publicKey,
+        toPubkey: bidder2.publicKey,
+        lamports: 0.1 * anchor.web3.LAMPORTS_PER_SOL,
+      }),
+      anchor.web3.SystemProgram.transfer({
+        fromPubkey: maker.publicKey,
+        toPubkey: crank.publicKey,
+        lamports: 0.1 * anchor.web3.LAMPORTS_PER_SOL,
+      })
+    );
+    await provider.sendAndConfirm(transferTx);
 
     nftMint = await createMint(provider.connection, maker.payer, maker.publicKey, null, 0);
     bidMint = await createMint(provider.connection, maker.payer, maker.publicKey, null, 6);
@@ -78,8 +87,7 @@ describe("capstone-auction", () => {
   });
 
   it("Makes an auction", async () => {
-    // Set end time to 4 seconds from now to allow for bidding
-    endTime = Math.floor(Date.now() / 1000) + 4;
+    endTime = Math.floor(Date.now() / 1000) + 10;
 
     [auctionPda] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("auction"), maker.publicKey.toBuffer(), seed1.toArrayLike(Buffer, "le", 8)],
@@ -171,8 +179,8 @@ describe("capstone-auction", () => {
 
   it("Resolves the auction via crank bot", async () => {
     // Wait for the auction timer to expire
-    console.log("Waiting 4 seconds for auction to end...");
-    await new Promise((resolve) => setTimeout(resolve, 4000));
+    console.log("Waiting 15 seconds for auction to end...(10 sec delay + 5 sec buffer)");
+    await new Promise((resolve) => setTimeout(resolve, 15000));
 
     winnerNftAta = getAssociatedTokenAddressSync(nftMint, bidder1.publicKey);
 
@@ -273,7 +281,7 @@ describe("capstone-auction", () => {
       }).rpc();
 
     // Wait for it to expire with zero bids
-    console.log("Waiting 4 seconds for zero-bid auction to end...");
+    console.log("Waiting 4 seconds for zero-bid auction to end...(2 sec delay + 2 sec buffer)");
     await new Promise((resolve) => setTimeout(resolve, 4000));
 
     // Cancel it

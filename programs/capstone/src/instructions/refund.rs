@@ -33,7 +33,7 @@ pub struct ClaimRefund<'info> {
 
     #[account(
         init_if_needed,
-        payer = bidder, // If they somehow closed their ATA, they pay to re-open it
+        payer = bidder, // If they somehow closed their ATA
         associated_token::mint = bid_mint,
         associated_token::authority = bidder,
     )]
@@ -64,14 +64,14 @@ impl<'info> ClaimRefund<'info> {
             AuctionError::AuctionNotEnded
         );
 
-        // No resolved-gate here on purpose — losers can withdraw the moment
-        // end_time passes, even if the maker never calls resolve_auction.
-
         // Ensuring the winner cannot withdraw their locked bid
         require!(
             self.bid_record.bidder != self.auction.highest_bidder,
             AuctionError::CannotRefundWinner
         );
+
+        // Ensuring the bid has not been refunded already
+        require!(!self.bid_record.refunded, AuctionError::AlreadyRefunded);
 
         // Preparing the PDA signatures to authorize the vault transfer
         let seed_bytes = self.auction.seed.to_le_bytes();

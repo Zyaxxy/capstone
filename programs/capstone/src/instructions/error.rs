@@ -14,4 +14,6 @@ pub enum AuctionError {
     AuctionNotResolved,
     #[msg("Cannot cancel an auction that received bids.")]
     AuctionHasBids,
+    #[msg("The bid has already been refunded.")]
+    AlreadyRefunded,
 }
